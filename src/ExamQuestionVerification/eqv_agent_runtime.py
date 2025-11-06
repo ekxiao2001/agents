@@ -1,7 +1,7 @@
 import os
 import asyncio
 import socket
-from typing import List, Dict, AsyncGenerator, Optional
+from typing import List, Dict, AsyncGenerator, Literal
 
 from agentscope_runtime.engine.agents.agentscope_agent import AgentScopeAgent
 from agentscope_runtime.engine import Runner
@@ -20,9 +20,8 @@ from agentscope_runtime.engine.schemas.agent_schemas import (
 from agentscope.model import OpenAIChatModel, DashScopeChatModel
 from agentscope.formatter import DeepSeekChatFormatter, DashScopeChatFormatter
 
-from exam_question_verification import build_exam_verifier
-from eqv_agent import ExamQuestionVerificationAgent
-from prompts import PROMPTS
+from .eqv_agent import ExamQuestionVerificationAgent
+from .prompts import PROMPTS
 
 # ---------------------------
 # 加载配置文件
@@ -36,37 +35,49 @@ with open(conf_path, "r", encoding="utf-8") as f:
 # ---------------------------
 # 考试题目核查+修正工具实例构建
 # ---------------------------
-LLM_BINDING = CONF.get("LLM_BINDING") or os.getenv("LLM_BINDING") or "deepseek"
-MODEL_NAME = CONF.get("MODEL_NAME") or os.getenv("MODEL_NAME") or "deepseek-chat"
-API_KEY = CONF.get("API_KEY") or os.getenv("API_KEY") or ""
-BASE_URL = CONF.get("BASE_URL") or os.getenv("BASE_URL") or "https://api.deepseek.com"
-
-verifier = build_exam_verifier(
-    llm_binding=LLM_BINDING if LLM_BINDING in ("deepseek", "dashscope") else "deepseek",
-    model_name=MODEL_NAME,
-    api_key=API_KEY,
-    base_url=BASE_URL,
-    stream=False
-)
+LLM_BINDING =  os.getenv("LLM_BINDING") or CONF.get("LLM_BINDING") or "deepseek"
+MODEL_NAME = os.getenv("MODEL_NAME") or CONF.get("MODEL_NAME") or "deepseek-chat"
+API_KEY = os.getenv("API_KEY") or CONF.get("API_KEY") or ""
+BASE_URL = os.getenv("BASE_URL") or CONF.get("BASE_URL") or "https://api.deepseek.com"
 
 
 class EQV_AgentRuntime:
-    def __init__(self) -> None:
-        self.llm_binding = LLM_BINDING
-        self.model_name = MODEL_NAME
-        self.api_key = API_KEY
-        self.base_url = BASE_URL
+    def __init__(
+        self,
+        llm_binding: str = LLM_BINDING,
+        model_name: str = MODEL_NAME,
+        api_key: str = API_KEY,
+        base_url: str = BASE_URL,
+    ) -> None:
+        self.llm_binding = llm_binding
+        self.model_name = model_name
+        self.api_key = api_key
+        self.base_url = base_url
+
+        self.tools = None
+        # from agentscope_runtime.sandbox.tools.base import run_ipython_cell
+        # self.tools = [run_ipython_cell]
 
         self.agent = self.create_exam_question_verification_agent()
 
         self.connected = False
 
-    async def connect(self, session_id: str, user_id: str) -> None:
+    async def connect(
+        self,
+        session_id: str, 
+        user_id: str, 
+        sandbox_type: Literal["local", "docker", "remote"] = "local",
+        sandbox_host: str = "localhost",
+        sandbox_port: int = 8010,
+    ) -> None:
         """
         连接到沙箱环境，初始化会话历史、内存服务、沙箱服务和上下文管理器。
         Args:
             session_id: 会话历史服务和沙箱服务的会话ID
             user_id: 会话历史服务和沙箱服务的用户ID
+            sandbox_type: 沙箱类型，可选值为 "local"（默认）、"docker" 或 "remote"
+            sandbox_host: 远程沙箱服务的主机名，仅在 sandbox_type 为 "remote" 时使用，默认值为 "localhost"
+            sandbox_port: 远程沙箱服务的端口号，仅在 sandbox_type 为 "docker" 或 "remote" 时使用，默认值为 8002
         """
         # 初始化会话历史服务
         session_history_service = InMemorySessionHistoryService()
@@ -77,24 +88,18 @@ class EQV_AgentRuntime:
         await self.memory_service.start()
 
         # 初始化沙箱
-        sandbox_type = os.getenv("AGENT_RUNTIME_SANDBOX_TYPE", "local")
         if sandbox_type == "local":
             self.sandbox_service = SandboxService()
         elif sandbox_type == "docker":
-            sandbox_port = CONF.get("AGENT_RUNTIME_SANDBOX_PORT") or os.getenv("AGENT_RUNTIME_SANDBOX_PORT", "8010")
             sandbox_url = f"http://host.docker.internal:{sandbox_port}"
             self.sandbox_service = SandboxService(
                 base_url=sandbox_url,
             )
         elif sandbox_type == "remote":
-            sandbox_host = CONF.get("AGENT_RUNTIME_SANDBOX_HOST") or os.getenv("AGENT_RUNTIME_SANDBOX_HOST", "localhost")
-            sandbox_port = CONF.get("AGENT_RUNTIME_SANDBOX_PORT") or os.getenv("AGENT_RUNTIME_SANDBOX_PORT", "8002")
             sandbox_url = f"http://{sandbox_host}:{sandbox_port}"
             self.sandbox_service = SandboxService(
                 base_url=sandbox_url,
             )
-        else:
-            raise ValueError(f"不支持的沙箱类型: {sandbox_type}, 请选择 'local' 或 'docker' 或 'remote'")
         await self.sandbox_service.start()
     
         # 创建上下文管理器
@@ -108,13 +113,13 @@ class EQV_AgentRuntime:
         )
 
         # 若需要使用沙箱工具
-        # from agentscope_runtime.sandbox.tools.filesystem import read_file
-        # from agentscope_runtime.sandbox.tools.base import run_ipython_cell
-        # sandboxes = self.sandbox_service.connect(
-        #     session_id=session_id,
-        #     user_id=user_id,
-        # )
-        # print(f"配置了{len(sandboxes)}个沙箱")
+        if self.tools != None:
+            sandboxes = self.sandbox_service.connect(
+                session_id=session_id,
+                user_id=user_id,
+                tools=self.tools
+            )
+            print(f"配置了{len(sandboxes)}个沙箱")
 
         runer = Runner(
             agent=self.agent,
@@ -153,15 +158,23 @@ class EQV_AgentRuntime:
             ):
                 yield message.content
     
-    async def deploy(self) -> None:
-        """部署agent"""
+    async def deploy(
+        self,
+        host: str = "0.0.0.0",
+        port: int = 8001,
+        endpoint_path: str = "",
+    ) -> None:
+        """部署agent
+
+        Args:
+            host: 部署的主机IP地址，默认值为 "0.0.0.0"
+            port: 部署的端口号，默认值为 8001
+            endpoint_path: 部署的端点路径，默认值为空字符串
+        """
+
         if not self.connected:
             raise ValueError("代理未包装为Runner环境, 请先调用 connect 方法。")
         
-        host = CONF.get("AGENT_RUNTIME_HOST", "0.0.0.0")
-        port = int(CONF.get("AGENT_RUNTIME_PORT", "8001"))
-        endpoint_path = CONF.get("AGENT_RUNTIME_ENDPOINT_PATH", "")
-
         def _get_accessible_host(host: str) -> str:
             """获取可访问的主机IP地址。"""
             try:
@@ -224,11 +237,15 @@ class EQV_AgentRuntime:
         else:
             raise ValueError(f"不支持的LLM绑定: {self.llm_binding}")
 
-        sys_prompt = PROMPTS["agent_sys_prompt"]
+        sys_prompt = PROMPTS["plan_agent_sys_prompt"]
+
+        # from agentscope_runtime.sandbox.tools.base import run_ipython_cell
+        # tools = [run_ipython_cell]
 
         agent = AgentScopeAgent(
-            name="eqv_plan_agent",
+            name="Plan_Agent_EQ(V+F)",
             model=model,
+            # tools=tools,
             agent_config={
                 "sys_prompt": sys_prompt,
                 "formatter": formatter,

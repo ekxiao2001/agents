@@ -1,60 +1,16 @@
-"""
-考试题目验证系统数据模型
-
-本模块定义了系统中使用的所有数据模型，包括：
-- 内部业务模型：ExamQuestion, VerificationResult
-- API 请求模型：ExamQuestionRequest, VerificationResultRequest, FixRequest, VerifyAndFixRequest
-- API 响应模型：StandardResponse
-- 枚举类型：QuestionType
-"""
-
 from typing import Optional, Literal, Union
-from enum import Enum
 from pydantic import BaseModel, Field, field_validator
 
 
-# ---------- 枚举类型定义 ----------
-class QuestionType(str, Enum):
-    """考试题目类型枚举"""
-    SINGLE_CHOICE = "single_choice"
-    MULTI_CHOICE = "multi_choice"
-    FILL_BLANK = "fill_blank"
-    BRIEF_ANSWER = "brief_answer"
-    CALCULATION = "calculation"
-
-    # 中文别名（保持向后兼容）
-    单选题 = "single_choice"
-    多选题 = "multi_choice"
-    填空题 = "fill_blank"
-    简答题 = "brief_answer"
-    计算题 = "calculation"
-
-
-# ---------- 内部业务模型 ----------
-class ExamQuestion(BaseModel):
-    """考试题目信息（内部业务模型）"""
-    question: str = Field(description="考试题目")
-    answer: str = Field(description="考试题目答案")
-    question_type: str = Field(description="考试题目类型")
-    knowledge_point: str = Field(description="考试题目所属的知识点")
-    knowledge_point_description: str = Field(description="考试题目所属的知识点的具体描述")
-    extra_requirement: str = Field(description="考试题目额外要求")
-
-
-class VerificationResult(BaseModel):
-    """考试题目核查结果（内部业务模型）"""
-    is_compliant: bool = Field(description="考试题目是否合规")
-    suggestion: str = Field(description="如果考试题目不合规，给出修正意见")
-
-
 # ---------- API 请求模型 ----------
-class ExamQuestionRequest(BaseModel):
+class ExamQuestion(BaseModel):
     """考题请求体校验模型（API层）"""
     question: str = Field(..., min_length=5, description="考试题目，至少5个字符")
     answer: str = Field(..., min_length=1, description="考试题目答案")
-    question_type: Union[QuestionType, str] = Field(
-        ..., description="考试题目类型，支持英文或中文"
-    )
+    question_type: Literal[
+        "单选题", "填空题", "简答题", "计算题", "编程题"
+    ] = Field(..., description="考试题目类型")
+    answer_analysis: str = Field(..., min_length=1, description="考试题目答案解析")
     knowledge_point: Optional[str] = Field(
         default="", description="考试题目所属的知识点"
     )
@@ -66,7 +22,7 @@ class ExamQuestionRequest(BaseModel):
     )
 
     @field_validator(
-        "question", "answer", "knowledge_point", "knowledge_point_description", "extra_requirement",
+        "question", "answer", "question_type", "answer_analysis", "knowledge_point", "knowledge_point_description", "extra_requirement",
         mode="before",
     )
     def strip_strings(cls, v):
@@ -75,33 +31,22 @@ class ExamQuestionRequest(BaseModel):
             return v.strip()
         return v
 
-    @field_validator("question_type", mode="before")
-    def normalize_question_type(cls, v):
-        """标准化题目类型为英文枚举值"""
-        if isinstance(v, QuestionType):
-            return v
-        if isinstance(v, str):
-            # 直接匹配中文枚举
-            for item in QuestionType:
-                if item.value == v or item.name == v:
-                    return item
-        return v
-
     model_config = {
         "json_schema_extra": {
             "example": {
-                "question": "请简述BFS和DFS搜索算法的区别",
-                "answer": "BFS按层扩展，使用队列；DFS深度优先，使用栈或递归...",
-                "question_type": "简答题",
-                "knowledge_point": "图搜索算法",
-                "knowledge_point_description": "DFS/BFS基础与最短路径问题",
-                "extra_requirement": "表达清晰，分点说明",
+                "question": "有一个容量为10的背包，现有4件物品，重量分别为[5, 4, 6, 3]，价值分别为[10, 40, 30, 50]。请问如何选择物品才能使背包内物品的总价值最大？最大价值是______。",
+                "answer": "选择第2件物品（重量4，价值40）和第4件物品（重量3，价值50），总重量为7，总价值为90。这是最优解。",
+                "question_type": "填空题",
+                "answer_analysis": "这是一个典型的01背包问题。我们可以使用动态规划来解决：\n1. 创建dp数组，dp[i][j]表示前i件物品在容量为j时的最大价值\n2. 状态转移方程：dp[i][j] = max(dp[i-1][j], dp[i-1][j-weight[i]] + value[i])\n3. 通过计算可得，当容量为10时，最大价值为90\n4. 回溯可得选择的物品是第2件和第4件",
+                "knowledge_point": "动态规划",
+                "knowledge_point_description": "01背包问题是动态规划的经典应用，通过状态转移方程求解最优解",
+                "extra_requirement": ""
             }
         }
     }
 
 
-class VerificationResultRequest(BaseModel):
+class VerificationResult(BaseModel):
     """验证结果请求模型（API层）"""
     is_compliant: bool = Field(..., description="考试题目是否合规")
     suggestion: Optional[str] = Field(default=None, description="修正意见")
@@ -109,23 +54,24 @@ class VerificationResultRequest(BaseModel):
 
 class FixRequest(BaseModel):
     """修复请求模型（API层）"""
-    exam_question: ExamQuestionRequest
-    verification_result: VerificationResultRequest
+    exam_question: ExamQuestion
+    verification_result: VerificationResult
 
     model_config = {
         "json_schema_extra": {
             "example": {
                 "exam_question": {
-                    "question": "请简述BFS和DFS搜索算法的区别",
-                    "answer": "BFS按层扩展，使用队列；DFS深度优先，使用栈或递归...",
-                    "question_type": "简答题",
-                    "knowledge_point": "图搜索算法",
-                    "knowledge_point_description": "DFS/BFS基础与最短路径问题",
-                    "extra_requirement": "表达清晰，分点说明",
+                    "question": "有一个容量为10的背包，现有4件物品，重量分别为[5, 4, 6, 3]，价值分别为[10, 40, 30, 50]。请问如何选择物品才能使背包内物品的总价值最大？最大价值是______。",
+                    "answer": "选择第2件物品（重量4，价值40）和第4件物品（重量3，价值50），总重量为7，总价值为90。这是最优解。",
+                    "question_type": "填空题",
+                    "answer_analysis": "这是一个典型的01背包问题。我们可以使用动态规划来解决：\n1. 创建dp数组，dp[i][j]表示前i件物品在容量为j时的最大价值\n2. 状态转移方程：dp[i][j] = max(dp[i-1][j], dp[i-1][j-weight[i]] + value[i])\n3. 通过计算可得，当容量为10时，最大价值为90\n4. 回溯可得选择的物品是第2件和第4件",
+                    "knowledge_point": "动态规划",
+                    "knowledge_point_description": "01背包问题是动态规划的经典应用，通过状态转移方程求解最优解",
+                    "extra_requirement": ""
                 },
                 "verification_result": {
                     "is_compliant": False,
-                    "suggestion": "题干过长且不够明确，请拆分并增加约束。",
+                    "suggestion": "**题干**：不符合填空题题型匹配标准。题干描述了一个完整的01背包问题求解过程，要求考生进行物品选择和计算最大价值，这更像是解答题或计算题，而不是填空题。填空题应该只有一个或少量空白处，且有确定唯一答案。\n\n**修改建议**：将题干简化为标准的填空题格式，例如：\"有一个容量为10的背包，现有4件物品，重量分别为[5, 4, 6, 3]，价值分别为[10, 40, 30, 50]。使用动态规划求解，最大价值是______。\"\n\n**答案**：答案格式不符合填空题标准。填空题答案应该是简洁的数值或简短回答，而不是详细的物品选择和解释。\n\n**解析**：解析内容正确，符合动态规划知识点要求，逻辑清晰。",
                 },
             }
         }
@@ -134,13 +80,12 @@ class FixRequest(BaseModel):
 
 class VerifyAndFixRequest(BaseModel):
     """验证并修复请求模型（API层）"""
-    exam_question: ExamQuestionRequest
+    exam_question: ExamQuestion
     max_fix_attempts: int = Field(
         default=3, ge=1, le=5, description="最大修正次数，范围1-5"
     )
 
 
-# ---------- API 响应模型 ----------
 class StandardResponse(BaseModel):
     """标准响应模型（API层）"""
     code: int = Field(..., description="0表示成功，非0表示错误码")
@@ -153,18 +98,6 @@ class StandardResponse(BaseModel):
         return self.code == 0
 
 
-class VerificationResponse(BaseModel):
-    """验证结果响应模型（API层）"""
-    question: str = Field(..., description="考试题目")
-    answer: str = Field(..., description="考试题目答案")
-    question_type: str = Field(..., description="考试题目类型")
-    knowledge_point: Optional[str] = Field(..., description="考试题目所属的知识点")
-    knowledge_point_description: Optional[str] = Field(..., description="考试题目所属的知识点的具体描述")
-    extra_requirement: Optional[str] = Field(..., description="考试题目额外要求")
-    is_compliant: bool = Field(..., description="是否合规")
-    suggestion: Optional[str] = Field(default=None, description="修正意见")
-
-
 # ---------- 导出列表 ----------
 __all__ = [
     # 枚举类型
@@ -173,11 +106,6 @@ __all__ = [
     "ExamQuestion",
     "VerificationResult",
     # API 请求模型
-    "ExamQuestionRequest",
-    "VerificationResultRequest",
     "FixRequest",
     "VerifyAndFixRequest",
-    # API 响应模型
-    "StandardResponse",
-    "VerificationResponse",
 ]

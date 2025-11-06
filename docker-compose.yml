@@ -7,7 +7,7 @@ services:
     ports: # 宿主机端口:容器端口
       - "8010:8010" # runtime_sandbox_server prot
       - "8021:8021" # eqv agent_runtime prot
-      - "8022:8022" # eqv fastapi_server prot
+      - "8022:8022" # fastapi_server prot
     env_file:
       - path: .env
         required: true

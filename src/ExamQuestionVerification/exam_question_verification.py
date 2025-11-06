@@ -4,13 +4,13 @@ from typing import Literal, Optional
 import yaml
 
 from agentscope.agent import ReActAgent
-from agentscope.message import Msg, TextBlock
+from agentscope.message import Msg
 from agentscope.memory import InMemoryMemory
 from agentscope.model import OpenAIChatModel, DashScopeChatModel, ChatModelBase
 from agentscope.formatter import DeepSeekChatFormatter, DashScopeChatFormatter, TruncatedFormatterBase
 
-from prompts import PROMPTS
-from schemas import ExamQuestion, VerificationResult
+from .prompts import PROMPTS
+from .schemas import ExamQuestion, VerificationResult
 
 
 class ExamQuestionVerification(object):
@@ -68,8 +68,8 @@ class ExamQuestionVerification(object):
         """
 
         agent = ReActAgent(
-            name="AGENT_exam_question_verification",
-            sys_prompt="你是一个专业的考试题目核查器，负责判断考试题目是否合规。如果题目不合规，请给出修正意见。",
+            name="Sub_Agent_EQV",
+            sys_prompt=PROMPTS["sub_agent_verify_sys_prompt"],
             formatter=self.formatter,
             model=self.model,
             memory=InMemoryMemory(),
@@ -83,6 +83,8 @@ class ExamQuestionVerification(object):
             verification_prompt = PROMPTS["fill_blank_verification"]
         elif exam_question.question_type in ("brief_answer", "简答题"):
             verification_prompt = PROMPTS["brief_answer_verification"]
+        elif exam_question.question_type in ("programming", "编程题"):
+            verification_prompt = PROMPTS["programming_verification"]
         elif exam_question.question_type in ("calculation", "计算题"):
             verification_prompt = PROMPTS["calculation_verification"]
         else:
@@ -92,14 +94,36 @@ class ExamQuestionVerification(object):
         verification_prompt = verification_prompt.format(
             question=exam_question.question,
             answer=exam_question.answer,
+            answer_analysis=exam_question.answer_analysis,
             knowledge_point=exam_question.knowledge_point,
             knowledge_point_description=exam_question.knowledge_point_description,
             extra_requirement=exam_question.extra_requirement,
         )
-    
-        res = await agent(Msg("user", role="user", content=verification_prompt), structured_model=VerificationResult)
-        # print(res)
-        return VerificationResult(**res.metadata) # type: ignore
+
+        # 使用通用函数处理JSON解析重试
+        json_format_prompt = """
+            请严格按照以下JSON格式返回结果，不要包含任何其他文字说明：
+            {
+                "is_compliant": true/false,
+                "suggestion": "修正建议内容"
+            }
+        """
+
+        default_factory = lambda: {
+            "is_compliant": False,
+            "suggestion": "系统无法正确解析AI响应，请手动检查题目合规性。"
+        }
+
+        json_res = await self._call_agent_with_json_retry(
+            agent=agent,
+            prompt=verification_prompt,
+            required_fields=["is_compliant", "suggestion"],
+            default_factory=default_factory,
+            max_retry_attempts=3,
+            json_format_prompt=json_format_prompt
+        )
+
+        return VerificationResult(**json_res)
 
     async def fix_exam_question(self, exam_question: ExamQuestion, verification_result: VerificationResult) -> ExamQuestion:
         """
@@ -115,8 +139,8 @@ class ExamQuestionVerification(object):
             return exam_question
         else:
             agent = ReActAgent(
-                name="AGENT_exam_question_fix",
-                sys_prompt="你是一个专业的考试题目修正器，负责根据提供的考题和修正意见创建符合要求的新考题。",
+                name="Sub_Agent_EQF",
+                sys_prompt=PROMPTS["sub_agent_fix_sys_prompt"],
                 formatter=self.formatter,
                 model=self.model,
                 memory=InMemoryMemory(),
@@ -124,16 +148,102 @@ class ExamQuestionVerification(object):
             fix_prompt = PROMPTS["fix_prompt"].format(
                 question=exam_question.question,
                 answer=exam_question.answer,
+                answer_analysis=exam_question.answer_analysis,
                 question_type=exam_question.question_type,
                 knowledge_point=exam_question.knowledge_point,
                 knowledge_point_description=exam_question.knowledge_point_description,
-                extra_requirement=exam_question.extra_requirement,
                 suggestion=verification_result.suggestion,
             )
-            res = await agent(Msg("user", role="user", content=fix_prompt), structured_model=ExamQuestion)
-            # print(res.metadata)
-            return ExamQuestion(**res.metadata) # type: ignore
 
+            # 使用通用函数处理JSON解析重试
+            json_format_prompt = """
+                请严格按照以下JSON格式返回修正后的考题，不要包含任何其他文字说明：
+                {
+                    "question": "修正后的题目内容",
+                    "answer": "修正后的答案内容",
+                    "answer_analysis": "修正后的答案解析",
+                    "question_type": "题目类型",
+                    "knowledge_point": "知识点",
+                    "knowledge_point_description": "知识点描述",
+                    "extra_requirement": "额外要求"
+                }
+            """
+
+            required_fields = ["question", "answer", "answer_analysis", "question_type",
+                "knowledge_point", "knowledge_point_description", "extra_requirement"]
+            default_factory = lambda: exam_question
+
+            json_res = await self._call_agent_with_json_retry(
+                agent=agent,
+                prompt=fix_prompt,
+                required_fields=required_fields,
+                default_factory=default_factory,
+                max_retry_attempts=3,
+                json_format_prompt=json_format_prompt
+            )
+
+            return ExamQuestion(**json_res)
+
+    async def _call_agent_with_json_retry(
+        self,
+        agent: ReActAgent,
+        prompt: str,
+        required_fields: list,
+        default_factory: callable,
+        max_retry_attempts: int = 3,
+        json_format_prompt: Optional[str] = None,
+        initial_attempt: int = 0
+    ):
+        """
+        通用的Agent调用和JSON解析函数
+
+        Args:
+            agent (ReActAgent): Agent实例
+            prompt (str): 初始prompt内容
+            required_fields (list): 必需的JSON字段列表
+            default_factory (callable): 解析失败时的默认结果工厂函数
+            max_retry_attempts (int): 最大重试次数
+            json_format_prompt (str, optional): JSON格式提示语
+            initial_attempt (int): 初始尝试次数
+
+        Returns:
+            解析后的JSON数据或默认结果
+        """
+        for attempt in range(max_retry_attempts):
+            try:
+                if attempt == 0:
+                    # 第一次尝试使用原始prompt
+                    res = await agent(Msg("user", role="user", content=prompt))
+                else:
+                    # 后续尝试要求JSON格式
+                    retry_prompt = f"上一次的响应格式不正确，无法解析为JSON。{json_format_prompt}\n\n请重新回答之前的问题。"
+                    res = await agent(Msg("user", role="user", content=retry_prompt))
+
+                # 尝试解析JSON
+                json_res = json.loads(res.content)
+
+                # 验证JSON结构是否包含必要字段
+                for field in required_fields:
+                    if field not in json_res:
+                        raise ValueError(f"JSON响应缺少 '{field}' 字段")
+
+                # 成功解析，返回结果
+                return json_res
+
+            except (json.JSONDecodeError, ValueError, KeyError) as e:
+                print(f"第{attempt + 1}次JSON解析失败: {e}")
+                print(f"Agent响应内容: {res.content}")
+
+                if attempt == max_retry_attempts - 1:
+                    # 最后一次尝试失败，返回默认结果
+                    print("所有JSON解析尝试均失败，返回默认结果")
+                    return default_factory
+                else:
+                    print(f"将进行第{attempt + 2}次重试...")
+                    continue
+
+        # 理论上不会到达这里，但为了类型安全
+        return default_factory
 
 def build_exam_verifier(
     llm_binding: Literal["deepseek", "dashscope"],
