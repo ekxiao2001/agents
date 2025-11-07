@@ -2,172 +2,213 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-## Overview
+## Project Overview
 
-This repository implements an **Exam Question Verification and Correction System** that uses AI agents to verify and fix exam questions. The system consists of two main components:
+This is a **FastAPI-based AI agent service** that provides two core capabilities:
+1. **Exam Question Verification** - Validates exam questions for compliance and provides automated fixes
+2. **Score Judgment** - Scores student answers against grading criteria and generates scoring rubrics
 
-1. **Agent Runtime** (port 8021): A conversational agent interface powered by AgentScope
-2. **FastAPI Server** (port 8022): A REST API providing verification and correction endpoints
+The system uses the [AgentScope](https://github.com/microsoft/agentscope) framework and supports LLM providers (DeepSeek, DashScope). All services run in Docker containers orchestrated by Supervisor.
 
-## Project Structure
+## Quick Start Commands
 
-```
-src/ExamQuestionVerification/
-├── agent_runtime.py           # AgentScope-based agent runtime (conversational interface)
-├── eqv_agent.py               # Agent implementation with tools
-├── exam_question_verification.py  # Core verification logic
-├── fastapi_server.py          # FastAPI REST API server
-├── schemas.py                 # Pydantic models for API requests/responses
-├── prompts.py                 # LLM prompt templates
-├── conf.yaml                  # Configuration file
-└── README.md                  # Component documentation
-```
-
-## Development Commands
-
-### Running the Application
-
-**Using Docker Compose (recommended)**:
+### Starting the Service
 ```bash
-# Pull sandbox images and deploy all services
+# Prepare sandbox images (one-time setup)
+docker pull agentscope-registry.ap-southeast-1.cr.aliyuncs.com/agentscope/runtime-sandbox-base:latest
+docker tag agentscope-registry.ap-southeast-1.cr.aliyuncs.com/agentscope/runtime-sandbox-base:latest agentscope/runtime-sandbox-base:latest
+
+docker pull agentscope-registry.ap-southeast-1.cr.aliyuncs.com/agentscope/runtime-sandbox-gui:latest
+docker tag agentscope-registry.ap-southeast-1.cr.aliyuncs.com/agentscope/runtime-sandbox-gui:latest agentscope/runtime-sandbox-gui:latest
+
+docker pull agentscope-registry.ap-southeast-1.cr.aliyuncs.com/agentscope/runtime-sandbox-filesystem:latest
+docker tag agentscope-registry.ap-southeast-1.cr.aliyuncs.com/agentscope/runtime-sandbox-filesystem:latest agentscope/runtime-sandbox-filesystem:latest
+
+docker pull agentscope-registry.ap-southeast-1.cr.aliyuncs.com/agentscope/runtime-sandbox-browser:latest
+docker tag agentscope-registry.ap-southeast-1.cr.aliyuncs.com/agentscope/runtime-sandbox-browser:latest agentscope/runtime-sandbox-browser:latest
+
+# Start all services
 docker-compose up -d --build
+```
 
-# View logs
-docker-compose logs -f
+**Note:** Initial startup may take time as uv installs dependencies.
 
-# Stop services
+### Stopping the Service
+```bash
 docker-compose down
 ```
 
-**Running locally**:
+### Viewing Logs
 ```bash
-# Install dependencies
-uv sync --frozen --no-dev
+# View all service logs
+docker-compose logs -f
 
-# Run agent runtime (conversational interface)
-uv run src/ExamQuestionVerification/agent_runtime.py
+# View specific service logs
+docker-compose logs -f fastapi_server
+docker-compose logs -f eqv_agent_runtime
+docker-compose logs -f runtime_sandbox_server
 
-# Run FastAPI server (in another terminal)
-uv run src/ExamQuestionVerification/fastapi_server.py
-
-# Or run both via supervisor
-supervisord -c supervisord.conf
+# View supervisor logs inside container
+docker exec -it zhihui_agents tail -f /var/log/supervisor/*.log
 ```
 
-**Single file execution**:
+### Testing
 ```bash
-# Test core verification logic
-uv run src/ExamQuestionVerification/exam_question_verification.py
+# Run the exam verification API test
+cd /home/ercon/Desktop/simpleWare/agents/zhihui_agents
+python test/eqv_fastapi_test.py
+
+# Run the agent runtime test
+python test/eqv_runtime_test.py
 ```
 
-### Key Configuration Files
+## High-Level Architecture
 
-- **conf.yaml**: Model configuration (LLM binding, API keys, ports)
-- **.env**: Environment variables for deployment
-- **docker-compose.yml**: Service orchestration
-- **supervisord.conf**: Process management for local runs
+### Service Architecture
+The system runs three services managed by Supervisor (`supervisord.conf`):
 
-## Architecture
+1. **Runtime Sandbox Server** (port 8010) - Docker-based sandbox for safe code execution
+   - Entry point: `runtime_sandbox_server/sandbox_server.sh`
+   - Configuration: `runtime_sandbox_server/conf.env`
+   - Docker Compose: `runtime_sandbox_server/docker-compose.yml`
 
-### Core Components
+2. **EQV Agent Runtime** (port 8021) - Exam verification agent service
+   - Main file: `agent_runtime/eqv_agent_runtime.py`
+   - Runs as: `uv run -m agent_runtime.eqv_agent_runtime`
 
-1. **ExamQuestionVerification** (src/ExamQuestionVerification/exam_question_verification.py:20)
-   - Main verification engine with two implementations:
-     - `main()`: Direct verification + correction flow
-     - `agent_main()`: Uses ReActAgent with toolkit integration
-   - Methods: `verify_exam_question()`, `fix_exam_question()`
+3. **FastAPI Server** (port 8022) - Main API gateway
+   - Main file: `fastapi_server_start.py`
+   - Entry point: `uv run fastapi_server_start.py`
 
-2. **ExamQuestionVerificationAgent** (src/ExamQuestionVerification/eqv_agent.py:187)
-   - AgentScope-based implementation with three tools:
-     - `verify_exam_question_tool`: Standalone verification
-     - `fix_exam_question_tool`: Standalone correction
-     - `verify_and_fix_exam_question_tool`: Combined operation
-   - Uses Runner pattern for deployment
+### Module Structure
 
-3. **FastAPI Server** (src/ExamQuestionVerification/fastapi_server.py:20)
-   - Three main endpoints:
-     - `POST /api/v1/verify`: Verify question compliance
-     - `POST /api/v1/fix`: Fix question based on verification result
-     - `POST /api/v1/verify-and-fix`: Combined verification + correction
-   - Provides interactive API docs at `/docs`
+**`src/ExamQuestionVerification/`** - Exam Question Verification Module
+- `exam_question_verification.py` - Core verification logic with iterative fix loop
+- `eqv_agent.py` - AgentScope ReActAgent implementation
+- `eqv_agent_runtime.py` - Runtime service entry point
+- `prompts.py` - Verification prompts for different question types
+- `schemas.py` - Pydantic models (ExamQuestion, VerificationResult, FixRequest)
+- `conf.yaml` - Module-specific configuration
 
-### Supported Question Types
+**`src/ScoreJudgment/`** - Score Judgment Module
+- `score_judgment.py` - Core scoring logic
+- `prompts.py` - Scoring and criteria generation prompts
+- `schemas.py` - Pydantic models (ScoreJudgmentInput, ScoreJudgmentOutput, GradingCriteriaInput)
+- `conf.yaml` - Module-specific configuration
 
-The system validates different question types with specific criteria (src/ExamQuestionVerification/prompts.py):
-- **Single Choice** (单选题): 4 options, single correct answer
-- **Multi Choice** (多选题): Multiple correct answers
-- **Fill Blank** (填空题): Deterministic answers
-- **Brief Answer** (简答题): Paragraph-length responses
-- **Calculation** (计算题): Step-by-step solvable
+### API Endpoints
 
-### Model Support
+**Exam Verification (考题检修)**
+- `POST /eqv` - Verify exam question compliance
+- `POST /eqf` - Fix exam question based on verification results
 
-The system supports two LLM backends (configurable in conf.yaml):
-- **DeepSeek** (default): Uses OpenAI-compatible API
-- **DashScope**: Alibaba's Qwen models
+**Score Judgment (判题)**
+- `POST /score-judgment` - Score student answers
+- `POST /grading-criteria` - Generate grading criteria
 
-## API Usage
+**Health Checks**
+- `GET /` - Welcome page
+- `GET /health` - Health check
 
-### Verification
-```python
-POST /api/v1/verify
-{
-  "question": "...",
-  "answer": "...",
-  "question_type": "单选题",
-  "knowledge_point": "...",
-  "knowledge_point_description": "...",
-  "extra_requirement": "..."
-}
-```
+## Development Workflow
 
-### Combined Verification + Fix
-```python
-POST /api/v1/verify-and-fix
-{
-  "exam_question": { ... },
-  "max_fix_attempts": 3  # 1-5 attempts
-}
-```
+### 1. Environment Configuration
+All configuration is in `.env`:
+- LLM settings (provider, model, API key, base URL)
+- FastAPI host/port (default: 8022)
+- Agent runtime port (default: 8021)
+- Sandbox settings (type: docker/local/remote, host, port: 8010)
 
-## Configuration
+### 2. Code Structure Patterns
+- Each module has a `build_*_agent()` factory function that constructs the agent with model and formatter
+- Agents use ReActAgent from AgentScope with InMemoryMemory
+- All Pydantic schemas defined in `schemas.py` files
+- Prompt templates in `prompts.py` with format placeholders
+- Configuration in `conf.yaml` files for each module
 
-**Model Configuration** (conf.yaml:1-5):
-- `LLM_BINDING`: "deepseek" or "dashscope"
-- `MODEL_NAME`: Model identifier (e.g., "deepseek-chat", "qwen-plus")
-- `API_KEY`: LLM API credentials
-- `BASE_URL`: API base URL
+### 3. Model Binding
+The system supports two LLM providers via `LLM_BINDING` environment variable:
+- `deepseek` - Uses DeepSeek API
+- `dashscope` - Uses DashScope API
 
-**Service Ports** (conf.yaml:11-18):
-- Agent Runtime: 8021 (docker-compose: 8021)
-- FastAPI Server: 8022 (docker-compose: 8022)
+Models are configured in `fastapi_server_start.py:38-60` with conditional binding.
 
-## Deployment Architecture
+### 4. Docker Architecture
+- Based on `python:3.10-slim`
+- Installs Rust and uv for package management
+- Uses domestic mirrors (Aliyun, Tsinghua) for faster downloads
+- Mounts Docker socket for sandbox execution
+- Multi-stage build with layer caching for dependencies
 
-The system runs with multiple containers (docker-compose.yml):
-1. **agents_server**: Main application (built from Dockerfile)
-2. **runtime_sandbox_base**: Base sandbox environment (port 8011)
-3. **runtime_sandbox_filesystem**: File system sandbox (port 8012)
-4. **runtime_sandbox_browser**: Browser automation sandbox (port 8013)
+## Key Components
 
-Note: Sandbox containers are configured but currently not actively used in the agent implementation (see commented code in eqv_agent.py:220-233).
+### AgentScope Integration
+The project uses AgentScope for AI agents:
+- `ReActAgent` for reasoning and acting
+- `InMemoryMemory` for conversation history
+- Formatter classes: `DeepSeekChatFormatter`, `DashScopeChatFormatter`
+- Model classes: `OpenAIChatModel`, `DashScopeChatModel`
+
+### Verification Process
+The exam verification follows an iterative loop (`exam_question_verification.py:28-58`):
+1. Verify current question
+2. Check compliance flag
+3. If non-compliant, fix and iterate (max 3 attempts)
+4. Return final question
+
+### Container Orchestration
+All services are managed by Supervisor:
+- Auto-restart on failure
+- Separate log files for each service
+- Nodaemon mode to keep container alive
 
 ## Testing
+Test files are in `/test/`:
+- `eqv_fastapi_test.py` - Tests FastAPI endpoints
+- `eqv_runtime_test.py` - Tests agent runtime service
 
-The repository includes a Jupyter notebook at `src/ExamQuestionVerification/demo.ipynb` for interactive testing and demonstrations.
+## Important Configuration Files
 
-## Troubleshooting
+- `.env` - Environment variables and API keys
+- `docker-compose.yml` - Service orchestration
+- `Dockerfile` - Container image build
+- `supervisord.conf` - Service management
+- `pyproject.toml` - Python dependencies (uv format)
 
-- **Port conflicts**: Ensure ports 8761, 8762, 8011-8013 are available
-- **API key errors**: Verify API keys in conf.yaml or .env match your LLM provider
-- **Model loading failures**: Check model name and base URL configuration
-- **Docker issues**: Pull required images first (see README.md:3-15)
+## Common Development Tasks
 
-## Key Implementation Details
+### Modifying Exam Verification Logic
+Edit: `src/ExamQuestionVerification/exam_question_verification.py`
 
-- **Agent Pattern**: Uses ReActAgent from AgentScope with InMemoryMemory
-- **Tool Integration**: Functions wrapped as tools using `@function_tool` decorator
-- **Async Operations**: All LLM calls are async; sync wrappers use ThreadPoolExecutor
-- **Structured Output**: Pydantic models ensure type safety
-- **Process Management**: Supervisor handles both agent runtime and FastAPI server
-- **CORS Enabled**: FastAPI allows all origins for browser-based clients
+### Adding New Question Types
+1. Add type to schema in `src/ExamQuestionVerification/schemas.py`
+2. Add verification prompt in `src/ExamQuestionVerification/prompts.py:1`
+3. Add conditional logic in `exam_question_verification.py:78-93`
+
+### Changing LLM Provider
+Update `.env:1`:
+```
+LLM_BINDING=dashscope  # or deepseek
+MODEL_NAME=your-model
+API_KEY=your-key
+BASE_URL=your-url
+```
+
+### Debugging
+```bash
+# View real-time logs
+docker-compose logs -f
+
+# Access container shell
+docker exec -it zhihui_agents /bin/bash
+
+# Check service status
+docker-compose ps
+```
+
+## Notes
+
+- The system uses iterative verification with a maximum of 3 fix attempts
+- All timestamps and logs are in Chinese
+- The sandbox requires Docker socket access for code execution
+- Dependencies are managed by uv, not pip

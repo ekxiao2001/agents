@@ -10,7 +10,7 @@ from agentscope.model import OpenAIChatModel, DashScopeChatModel, ChatModelBase
 from agentscope.formatter import DeepSeekChatFormatter, DashScopeChatFormatter, TruncatedFormatterBase
 
 from .prompts import PROMPTS
-from .schemas import ScoreJudgmentInput, ScoreJudgmentOutput, GradingCriteriaInput
+from .schemas import ScoreJudgmentInput, ScoreJudgmentOutput, GradingCriteriaInput, GradingCriteriaOutput
 
 
 class ScoreJudgmentAgent(object):
@@ -59,9 +59,11 @@ class ScoreJudgmentAgent(object):
             ),
             role="user"
         )
-        res = await score_gudgment_agent(score_judgment_query)
-        res_json = json.loads(res.content)
-        score_judgment_output = ScoreJudgmentOutput(**res_json)
+        res = await score_gudgment_agent(
+            score_judgment_query,
+            structured_model=ScoreJudgmentOutput,
+        )
+        score_judgment_output = ScoreJudgmentOutput(**res)
         return score_judgment_output
 
     async def grading_criteria_designer(self, grading_criteria_input: GradingCriteriaInput) -> str:
@@ -90,71 +92,14 @@ class ScoreJudgmentAgent(object):
             ),
             role="user"
         )
-        res = await grading_criteria_designer_agent(grading_criteria_designer_query)
-        res_json = json.loads(res.content)
+        res = await grading_criteria_designer_agent(
+            grading_criteria_designer_query,
+            structured_model=GradingCriteriaOutput,
+        )
+        grading_criteria_output = GradingCriteriaOutput(**res)
 
-        return res_json["grading_criteria"]
+        return grading_criteria_output.grading_criteria
 
-    async def _call_agent_with_json_retry(
-        self,
-        agent: ReActAgent,
-        prompt: str,
-        required_fields: list,
-        default_factory: callable,
-        max_retry_attempts: int = 3,
-        json_format_prompt: Optional[str] = None,
-        initial_attempt: int = 0
-    ):
-        """
-        通用的Agent调用和JSON解析函数
-
-        Args:
-            agent (ReActAgent): Agent实例
-            prompt (str): 初始prompt内容
-            required_fields (list): 必需的JSON字段列表
-            default_factory (callable): 解析失败时的默认结果工厂函数
-            max_retry_attempts (int): 最大重试次数
-            json_format_prompt (str, optional): JSON格式提示语
-            initial_attempt (int): 初始尝试次数
-
-        Returns:
-            解析后的JSON数据或默认结果
-        """
-        for attempt in range(max_retry_attempts):
-            try:
-                if attempt == 0:
-                    # 第一次尝试使用原始prompt
-                    res = await agent(Msg("user", role="user", content=prompt))
-                else:
-                    # 后续尝试要求JSON格式
-                    retry_prompt = f"上一次的响应格式不正确，无法解析为JSON。{json_format_prompt}\n\n请重新回答之前的问题。"
-                    res = await agent(Msg("user", role="user", content=retry_prompt))
-
-                # 尝试解析JSON
-                json_res = json.loads(res.content)
-
-                # 验证JSON结构是否包含必要字段
-                for field in required_fields:
-                    if field not in json_res:
-                        raise ValueError(f"JSON响应缺少 '{field}' 字段")
-
-                # 成功解析，返回结果
-                return json_res
-
-            except (json.JSONDecodeError, ValueError, KeyError) as e:
-                print(f"第{attempt + 1}次JSON解析失败: {e}")
-                print(f"Agent响应内容: {res.content}")
-
-                if attempt == max_retry_attempts - 1:
-                    # 最后一次尝试失败，返回默认结果
-                    print("所有JSON解析尝试均失败，返回默认结果")
-                    return default_factory
-                else:
-                    print(f"将进行第{attempt + 2}次重试...")
-                    continue
-
-        # 理论上不会到达这里，但为了类型安全
-        return default_factory
 
 def build_score_judgment_agent(
     llm_binding: Literal["deepseek", "dashscope"],

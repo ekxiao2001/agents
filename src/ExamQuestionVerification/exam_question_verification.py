@@ -192,7 +192,6 @@ class ExamQuestionVerification(object):
         default_factory: callable,
         max_retry_attempts: int = 3,
         json_format_prompt: Optional[str] = None,
-        initial_attempt: int = 0
     ):
         """
         通用的Agent调用和JSON解析函数

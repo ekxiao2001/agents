@@ -23,6 +23,7 @@ app = FastAPI(
     openapi_tags=[
         {"name": "考题检修"},
         {"name": "判题"},
+        {"name": "考试设置"},
     ],
 )
 
@@ -43,6 +44,7 @@ BASE_URL = os.getenv("BASE_URL", "https://api.deepseek.com")
 
 from src.ExamQuestionVerification.exam_question_verification import build_exam_verifier
 from src.ScoreJudgment.score_judgment import build_score_judgment_agent
+from src.ExamSettingsExtraction.exam_settings_extraction import build_exam_settings_agent
 
 verifier = build_exam_verifier(
     llm_binding=LLM_BINDING if LLM_BINDING in ("deepseek", "dashscope") else "deepseek",
@@ -52,6 +54,13 @@ verifier = build_exam_verifier(
     stream=False,
 )
 score_agent = build_score_judgment_agent(
+    llm_binding=LLM_BINDING if LLM_BINDING in ("deepseek", "dashscope") else "deepseek",
+    model_name=MODEL_NAME,
+    api_key=API_KEY,
+    base_url=BASE_URL,
+    stream=False,
+)
+exam_settings_agent = build_exam_settings_agent(
     llm_binding=LLM_BINDING if LLM_BINDING in ("deepseek", "dashscope") else "deepseek",
     model_name=MODEL_NAME,
     api_key=API_KEY,
@@ -176,6 +185,32 @@ async def grading_criteria_endpoint(payload: GradingCriteriaInput):
         return StandardResponse(
             code=500,
             message=f"评分细则生成失败: {e}",
+            data=None,
+        )
+
+
+# ---------- 考试设置提取端点 ----------
+from src.ExamSettingsExtraction.schemas import (
+    ExamSettingsInput,
+    ExamSettingsOutput,
+    StandardResponse
+)
+
+@app.post(
+    "/exam-settings",
+    summary="考试设置提取",
+    description="从文本中提取考试设置信息，包括考试时长、考试类型等。",
+    response_model=StandardResponse,
+    tags=["考试设置"],
+)
+async def exam_settings_endpoint(payload: ExamSettingsInput):
+    try:
+        result: ExamSettingsOutput = await exam_settings_agent.extract_settings(payload)
+        return StandardResponse(code=0, message="考试设置提取成功", data=result.model_dump())
+    except Exception as e:
+        return StandardResponse(
+            code=500,
+            message=f"考试设置提取失败: {e}",
             data=None,
         )
 

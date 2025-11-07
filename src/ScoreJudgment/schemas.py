@@ -43,9 +43,14 @@ class ScoreJudgmentInput(BaseModel):
     }
 
 
+class ScoreJudgmentOutput(BaseModel):
+    score: int = Field(description="考生得分")
+    sj_reason: str = Field(description="判分理由")
+
+
 class GradingCriteriaInput(BaseModel):
     question_title: str = Field(description="考试题目")
-    question_type: Literal["填空题", "简答题", "编程题"] = Field(description="考题类型")
+    question_type: Literal["简答题", "编程题"] = Field(description="考题类型")
     standard_answer: str = Field(description="题目标准答案")
     full_score: int = Field(description="考题满分分数")
 
@@ -78,10 +83,8 @@ class GradingCriteriaInput(BaseModel):
         }
     }
 
-
-class ScoreJudgmentOutput(BaseModel):
-    score: int = Field(description="考生得分")
-    sj_reason: str = Field(description="判分理由")
+class GradingCriteriaOutput(BaseModel):
+    grading_criteria: str = Field(description="判分细则")
 
 
 class StandardResponse(BaseModel):
