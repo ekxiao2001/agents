@@ -1,10 +1,9 @@
 import os
 import uvicorn
 from dotenv import load_dotenv
-
 from fastapi import FastAPI
-from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 
 
 # 加载根目录下 .env
@@ -16,8 +15,7 @@ load_dotenv(os.path.join(ROOT_DIR, ".env"))
 app = FastAPI(
     title="Agents API",
     description=(
-        "统一的考试核查与分数判别服务。"
-        "提供核查、修复，以及判分与评分细则生成端点。"
+        "统一的考试核查与分数判别服务。提供核查、修复，以及判分与评分细则生成端点。"
     ),
     version="1.0.0",
     openapi_tags=[
@@ -44,7 +42,9 @@ BASE_URL = os.getenv("BASE_URL", "https://api.deepseek.com")
 
 from src.ExamQuestionVerification.exam_question_verification import build_exam_verifier
 from src.ScoreJudgment.score_judgment import build_score_judgment_agent
-from src.ExamSettingsExtraction.exam_settings_extraction import build_exam_settings_agent
+from src.ExamSettingsExtraction.exam_settings_extraction import (
+    build_exam_settings_agent,
+)
 
 verifier = build_exam_verifier(
     llm_binding=LLM_BINDING if LLM_BINDING in ("deepseek", "dashscope") else "deepseek",
@@ -97,8 +97,9 @@ from src.ExamQuestionVerification.schemas import (
     ExamQuestion,
     VerificationResult,
     FixRequest,
-    StandardResponse
+    StandardResponse,
 )
+
 
 @app.post(
     "/eqv",
@@ -131,7 +132,9 @@ async def fix_endpoint(payload: FixRequest):
         eq = ExamQuestion(**payload.exam_question.model_dump())
         ver = VerificationResult(**payload.verification_result.model_dump())
         new_eq: ExamQuestion = await verifier.fix_exam_question(eq, ver)
-        return StandardResponse(code=0, message="考题修复成功", data=new_eq.model_dump())
+        return StandardResponse(
+            code=0, message="考题修复成功", data=new_eq.model_dump()
+        )
     except Exception as e:
         return StandardResponse(
             code=500,
@@ -145,8 +148,9 @@ from src.ScoreJudgment.schemas import (
     GradingCriteriaInput,
     ScoreJudgmentInput,
     ScoreJudgmentOutput,
-    StandardResponse
+    StandardResponse,
 )
+
 
 @app.post(
     "/score-judgment",
@@ -180,7 +184,9 @@ async def score_judgment_endpoint(payload: ScoreJudgmentInput):
 async def grading_criteria_endpoint(payload: GradingCriteriaInput):
     try:
         criteria: str = await score_agent.grading_criteria_designer(payload)
-        return StandardResponse(code=0, message="评分细则生成成功", data={"grading_criteria": criteria})
+        return StandardResponse(
+            code=0, message="评分细则生成成功", data={"grading_criteria": criteria}
+        )
     except Exception as e:
         return StandardResponse(
             code=500,
@@ -193,8 +199,9 @@ async def grading_criteria_endpoint(payload: GradingCriteriaInput):
 from src.ExamSettingsExtraction.schemas import (
     ExamSettingsInput,
     ExamSettingsOutput,
-    StandardResponse
+    StandardResponse,
 )
+
 
 @app.post(
     "/exam-settings",

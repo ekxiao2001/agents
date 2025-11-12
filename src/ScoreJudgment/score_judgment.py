@@ -1,6 +1,7 @@
+import os
 import asyncio
 import json
-from typing import Literal, Optional
+from typing import Literal
 import yaml
 
 from agentscope.agent import ReActAgent
@@ -8,9 +9,41 @@ from agentscope.message import Msg
 from agentscope.memory import InMemoryMemory
 from agentscope.model import OpenAIChatModel, DashScopeChatModel, ChatModelBase
 from agentscope.formatter import DeepSeekChatFormatter, DashScopeChatFormatter, TruncatedFormatterBase
+from agentscope.tool import execute_python_code, Toolkit
 
 from .prompts import PROMPTS
 from .schemas import ScoreJudgmentInput, ScoreJudgmentOutput, GradingCriteriaInput, GradingCriteriaOutput
+
+import logging
+from logging.handlers import RotatingFileHandler
+
+# 在当前文件目录下创建 logs 子目录并配置 logger
+log_dir = os.path.join(os.path.dirname(__file__), "logs")
+os.makedirs(log_dir, exist_ok=True)
+
+log_file = os.path.join(log_dir, "score_judgment.log")
+
+logger = logging.getLogger("ScoreJudgmentLogger")
+logger.setLevel(logging.INFO)
+
+# 避免重复添加 handler
+if not logger.handlers:
+    # 使用 RotatingFileHandler 自动轮转日志文件
+    file_handler = RotatingFileHandler(
+        log_file,
+        maxBytes=5 * 1024 * 1024,  # 5MB
+        backupCount=5,
+        encoding="utf-8"
+    )
+    file_handler.setLevel(logging.INFO)
+
+    # 定义日志格式
+    formatter = logging.Formatter(
+        "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+    )
+    file_handler.setFormatter(formatter)
+
+    logger.addHandler(file_handler)
 
 
 class ScoreJudgmentAgent(object):
@@ -35,18 +68,39 @@ class ScoreJudgmentAgent(object):
             ScoreJudgmentOutput: 分数判断输出
         """
 
-        score_gudgment_agent = ReActAgent(
-            name="Agent_ScoreJudgment",
-            sys_prompt=PROMPTS["score_judgment_sys_prompt"],
-            formatter=self.formatter,
-            model=self.model,
-            memory=InMemoryMemory(),
-        )
+        # 实例化 ReAct 智能体
+        if score_judgment_input.question_type == "编程题":
+            # 若为编程题，则注册执行 Python 代码的工具
+            tools = Toolkit()
+            tools.register_tool_function(execute_python_code)
+            score_gudgment_agent = ReActAgent(
+                name="Agent_ScoreJudgment",
+                sys_prompt=PROMPTS["score_judgment_sys_prompt"],
+                formatter=self.formatter,
+                model=self.model,
+                memory=InMemoryMemory(),
+                toolkit=tools,
+            )
+        else:
+            score_gudgment_agent = ReActAgent(
+                name="Agent_ScoreJudgment",
+                sys_prompt=PROMPTS["score_judgment_sys_prompt"],
+                formatter=self.formatter,
+                model=self.model,
+                memory=InMemoryMemory(),
+            )
 
         # 若未提供判分细则，则调用判分细则生成器
         if score_judgment_input.grading_criteria == None:
-            score_judgment_input.grading_criteria = await self.grading_criteria_designer(score_judgment_input)
-        
+            # 调用判分细则生成器
+            grading_criteria_input = GradingCriteriaInput(
+                question_title=score_judgment_input.question_title,
+                question_type=score_judgment_input.question_type,
+                standard_answer=score_judgment_input.standard_answer,
+                full_score=score_judgment_input.full_score,
+            )
+            score_judgment_input.grading_criteria = await self.grading_criteria_designer(grading_criteria_input)
+
         score_judgment_query = Msg(
             name="user",
             content=PROMPTS["score_judgment_query"].format(
@@ -63,7 +117,7 @@ class ScoreJudgmentAgent(object):
             score_judgment_query,
             structured_model=ScoreJudgmentOutput,
         )
-        score_judgment_output = ScoreJudgmentOutput(**res)
+        score_judgment_output = ScoreJudgmentOutput(**res.metadata)
         return score_judgment_output
 
     async def grading_criteria_designer(self, grading_criteria_input: GradingCriteriaInput) -> str:
@@ -82,21 +136,32 @@ class ScoreJudgmentAgent(object):
             model=self.model,
             memory=InMemoryMemory(),
         )
-        grading_criteria_designer_query = Msg(
-            name="user",
-            content=PROMPTS["grading_criteria_designer_query"].format(
+
+        if grading_criteria_input.question_type == "编程题":
+            content = PROMPTS["programing_grading_criteria_designer_query"].format(
+                question_title=grading_criteria_input.question_title,
+                standard_answer=grading_criteria_input.standard_answer,
+                full_score=grading_criteria_input.full_score,
+            ),
+        else:
+            content = PROMPTS["grading_criteria_designer_query"].format(
                 question_title=grading_criteria_input.question_title,
                 question_type=grading_criteria_input.question_type,
                 standard_answer=grading_criteria_input.standard_answer,
                 full_score=grading_criteria_input.full_score,
-            ),
+            )
+        grading_criteria_designer_query = Msg(
+            name="user",
+            content=content[0] if isinstance(content, tuple) else content,
             role="user"
         )
+
         res = await grading_criteria_designer_agent(
             grading_criteria_designer_query,
             structured_model=GradingCriteriaOutput,
         )
-        grading_criteria_output = GradingCriteriaOutput(**res)
+        logger.info(f"判分细则生成结果: {json.dumps(res.metadata, ensure_ascii=False, indent=2)}")
+        grading_criteria_output = GradingCriteriaOutput(**res.metadata)
 
         return grading_criteria_output.grading_criteria
 

@@ -1,9 +1,6 @@
 from agentscope.message._message_base import Msg
 import asyncio
-import json
 import os
-from typing import Any, Literal, Optional
-from pydantic import BaseModel, ValidationError, Field
 import yaml
 
 from agentscope.agent import ReActAgent
@@ -56,7 +53,6 @@ class ExamQuestionVerificationAgent(ReActAgent):
         # 注册工具到当前 Agent 的 toolkit
         self.toolkit.register_tool_function(self.exam_question_verify_tool)
         self.toolkit.register_tool_function(self.exam_question_fix_tool)
-        # self.toolkit.register_tool_function(run_ipython_cell)
 
     async def exam_question_verify_tool(
         self,
@@ -221,16 +217,16 @@ async def main():
     )
 
 
-    query = '''
-    仅核查考题：
-    考试题目：{question}
-    考题答案：{answer}
-    考题答案解析：{answer_analysis}
-    考试题目类型：{question_type}
-    考试题目所属的知识点：{knowledge_point}
-    考试题目所属的知识点的具体描述：{knowledge_point_description}
-    考试题目额外要求：{extra_requirement}
-    '''.format(**exam_question.model_dump())
+    # query = '''
+    # 仅核查考题：
+    # 考试题目：{question}
+    # 考题答案：{answer}
+    # 考题答案解析：{answer_analysis}
+    # 考试题目类型：{question_type}
+    # 考试题目所属的知识点：{knowledge_point}
+    # 考试题目所属的知识点的具体描述：{knowledge_point_description}
+    # 考试题目额外要求：{extra_requirement}
+    # '''.format(**exam_question.model_dump())
 
     # res = await agent.reply(
     #     Msg("user", role="user", content=query),

@@ -6,27 +6,27 @@ from typing import Optional
 
 from src.ExamQuestionVerification.schemas import ExamQuestion
 
-# exam_question = ExamQuestion(
-#     question='''
-#     搜索算法相关\n（1）分别说明 DFS 和 BFS 如何用队列或栈实现，并对比两者遍历同一图时的顺序差异。\n（2）在求解无权图最短路径问题时，为什么 BFS 通常比 DFS 更高效？结合遍历特性解释原因。
-#     ''',
-#     answer="（1）DFS 用栈（递归或显式栈），一路深入再回溯；BFS 用队列，一层层扩展；顺序差异：DFS 纵深，BFS 横扩。\n（2）BFS 按层扩展，首次到达目标即最短路径；DFS 可能深入很长非最短路径才回溯，访问节点更多。",
-#     question_type="简答题",
-#     knowledge_point="",
-#     knowledge_point_description="",
-#     extra_requirement="将简答题修改为单选题",
-# )
+exam_question = ExamQuestion(
+    question='''
+    搜索算法相关\n（1）分别说明 DFS 和 BFS 如何用队列或栈实现，并对比两者遍历同一图时的顺序差异。\n（2）在求解无权图最短路径问题时，为什么 BFS 通常比 DFS 更高效？结合遍历特性解释原因。
+    ''',
+    answer="（1）DFS 用栈（递归或显式栈），一路深入再回溯；BFS 用队列，一层层扩展；顺序差异：DFS 纵深，BFS 横扩。\n（2）BFS 按层扩展，首次到达目标即最短路径；DFS 可能深入很长非最短路径才回溯，访问节点更多。",
+    question_type="简答题",
+    knowledge_point="",
+    knowledge_point_description="",
+    extra_requirement="将简答题修改为单选题",
+)
 
-# text = '''
-# 核查并修正以下考试题目:
-# 考试题目：{question}
-# 考题答案：{answer}
-# 考试题目类型：{question_type}
-# 考试题目所属的知识点：{knowledge_point}
-# 考试题目所属的知识点的具体描述：{knowledge_point_description}
-# 考试题目额外要求：{extra_requirement}
-# '''
-# inputs = text.format(**exam_question.model_dump())
+text = '''
+核查并修正以下考试题目:
+考试题目：{question}
+考题答案：{answer}
+考试题目类型：{question_type}
+考试题目所属的知识点：{knowledge_point}
+考试题目所属的知识点的具体描述：{knowledge_point_description}
+考试题目额外要求：{extra_requirement}
+'''
+inputs = text.format(**exam_question.model_dump())
 
 def test_deployed_agent():
     # 准备测试负载
@@ -35,7 +35,7 @@ def test_deployed_agent():
             {
                 "role": "user",
                 "content": [
-                    {"type": "text", "text": "生成一段python的快速排序代码，并执行"},
+                    {"type": "text", "text": inputs},
                 ],
             },
         ],

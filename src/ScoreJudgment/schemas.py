@@ -3,7 +3,7 @@ from pydantic import BaseModel, Field, field_validator
 
 class ScoreJudgmentInput(BaseModel):
     question_title: str = Field(description="考试题目")
-    question_type: Literal["填空题", "简答题", "编程题"] = Field(description="考题类型")
+    question_type: Literal["简答题", "编程题"] = Field(description="考题类型")
     standard_answer: str = Field(description="题目标准答案")
     student_answer: str = Field(description="考生答案")
     full_score: int = Field(description="考题满分分数")

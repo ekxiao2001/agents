@@ -9,4 +9,7 @@ dependencies = [
     "agentscope-runtime>=0.1.6",
     "pydantic>=2.12.3",
     "pyyaml>=6.0.3",
+    "fastapi>=0.115.0",
+    "uvicorn>=0.30.0",
+    "python-dotenv>=1.0.1",
 ]

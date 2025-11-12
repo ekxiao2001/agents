@@ -8,7 +8,7 @@ class ExamQuestion(BaseModel):
     question: str = Field(..., min_length=5, description="考试题目，至少5个字符")
     answer: str = Field(..., min_length=1, description="考试题目答案")
     question_type: Literal[
-        "单选题", "填空题", "简答题", "计算题", "编程题"
+        "单选题", "多选题", "填空题", "简答题", "计算题", "编程题",
     ] = Field(..., description="考试题目类型")
     answer_analysis: str = Field(..., min_length=1, description="考试题目答案解析")
     knowledge_point: Optional[str] = Field(

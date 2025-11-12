@@ -75,17 +75,17 @@ class ExamQuestionVerification(object):
             memory=InMemoryMemory(),
         )
 
-        if exam_question.question_type in ("single_choice", "单选题"):
+        if exam_question.question_type == "单选题":
             verification_prompt = PROMPTS["single_choice_verification"]
-        elif exam_question.question_type in ("multi_choice", "多选题"):
+        elif exam_question.question_type == "多选题":
             verification_prompt = PROMPTS["multi_choice_verification"]
-        elif exam_question.question_type in ("fill_blank", "填空题"):
+        elif exam_question.question_type == "填空题":
             verification_prompt = PROMPTS["fill_blank_verification"]
-        elif exam_question.question_type in ("brief_answer", "简答题"):
+        elif exam_question.question_type == "简答题":
             verification_prompt = PROMPTS["brief_answer_verification"]
-        elif exam_question.question_type in ("programming", "编程题"):
+        elif exam_question.question_type == "编程题":
             verification_prompt = PROMPTS["programming_verification"]
-        elif exam_question.question_type in ("calculation", "计算题"):
+        elif exam_question.question_type == "计算题":
             verification_prompt = PROMPTS["calculation_verification"]
         else:
             verification_prompt = PROMPTS["verification_prompt"].format(
@@ -236,13 +236,20 @@ class ExamQuestionVerification(object):
                 if attempt == max_retry_attempts - 1:
                     # 最后一次尝试失败，返回默认结果
                     print("所有JSON解析尝试均失败，返回默认结果")
-                    return default_factory
+                    try:
+                        return default_factory()
+                    except TypeError:
+                        # 兼容传入已构造好的对象
+                        return default_factory
                 else:
                     print(f"将进行第{attempt + 2}次重试...")
                     continue
 
         # 理论上不会到达这里，但为了类型安全
-        return default_factory
+        try:
+            return default_factory()
+        except TypeError:
+            return default_factory
 
 def build_exam_verifier(
     llm_binding: Literal["deepseek", "dashscope"],
