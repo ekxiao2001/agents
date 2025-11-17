@@ -7,7 +7,7 @@ from agentscope.agent import ReActAgent
 from agentscope.message import Msg
 from agentscope.memory import InMemoryMemory
 from agentscope.model import OpenAIChatModel, DashScopeChatModel, ChatModelBase
-from agentscope.formatter import DeepSeekChatFormatter, DashScopeChatFormatter, TruncatedFormatterBase
+from agentscope.formatter import OpenAIChatFormatter, DashScopeChatFormatter, TruncatedFormatterBase
 
 from .prompts import PROMPTS
 from .schemas import ExamQuestion, VerificationResult
@@ -252,15 +252,15 @@ class ExamQuestionVerification(object):
             return default_factory
 
 def build_exam_verifier(
-    llm_binding: Literal["deepseek", "dashscope"],
+    llm_binding: Literal["openai", "dashscope"],
     model_name: str,
     api_key: str,
     base_url: str = "https://api.deepseek.com",
     stream: bool = True,
 ) -> ExamQuestionVerification:
     try:
-        if llm_binding == "deepseek":
-            formatter = DeepSeekChatFormatter()
+        if llm_binding == "openai":
+            formatter = OpenAIChatFormatter()
             model = OpenAIChatModel(
                 model_name=model_name,
                 api_key=api_key,

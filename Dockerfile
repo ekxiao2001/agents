@@ -48,8 +48,8 @@ ENV UV_COMPILE_BYTECODE=1 \
 # 安装 uv
 # ----------
 # 方法1. Install uv using the installer script
-ADD https://astral.sh/uv/install.sh /uv-installer.sh
-RUN sh /uv-installer.sh && rm /uv-installer.sh
+# ADD https://astral.sh/uv/install.sh /uv-installer.sh
+# RUN sh /uv-installer.sh && rm /uv-installer.sh
 
 # 方法2. Install uv using pip from domestic mirror (alternative to installer script)
 # RUN pip install --index-url https://pypi.tuna.tsinghua.edu.cn/simple uv
@@ -58,18 +58,18 @@ RUN sh /uv-installer.sh && rm /uv-installer.sh
 # Release 页面: https://github.com/astral-sh/uv/releases
 # 对于大多数 Linux 服务器（x86_64 架构），你需要下载 uv-x86_64-unknown-linux-musl.tar.gz 这样的文件
 # --- 安装 uv (使用缓存优化，单步完成) ---
-# RUN --mount=type=cache,target=/tmp/uv_cache \
-#     # 使用 bind mount 将构建上下文中的 uv 压缩包挂载到容器内
-#     --mount=type=bind,source=uv-x86_64-unknown-linux-musl.tar.gz,target=/tmp/uv_source.tar.gz \
-#     command -v uv > /dev/null && echo "uv already installed, skipping." || ( \
-#         echo "Installing uv..." && \
-#         # 1. 从 bind mount 的源文件复制到可写的缓存目录
-#         cp /tmp/uv_source.tar.gz /tmp/uv_cache/uv.tar.gz && \
-#         # 2. 在缓存目录中解压
-#         tar -xzf /tmp/uv_cache/uv.tar.gz -C /tmp/uv_cache && \
-#         # 3. 从缓存目录将 uv 二进制文件移动到系统路径
-#         mv /tmp/uv_cache/uv-x86_64-unknown-linux-musl/uv /usr/local/bin/ \
-#     )
+RUN --mount=type=cache,target=/tmp/uv_cache \
+    # 使用 bind mount 将构建上下文中的 uv 压缩包挂载到容器内
+    --mount=type=bind,source=uv-x86_64-unknown-linux-musl.tar.gz,target=/tmp/uv_source.tar.gz \
+    command -v uv > /dev/null && echo "uv already installed, skipping." || ( \
+        echo "Installing uv..." && \
+        # 1. 从 bind mount 的源文件复制到可写的缓存目录
+        cp /tmp/uv_source.tar.gz /tmp/uv_cache/uv.tar.gz && \
+        # 2. 在缓存目录中解压
+        tar -xzf /tmp/uv_cache/uv.tar.gz -C /tmp/uv_cache && \
+        # 3. 从缓存目录将 uv 二进制文件移动到系统路径
+        mv /tmp/uv_cache/uv-x86_64-unknown-linux-musl/uv /usr/local/bin/ \
+    )
 
 # Copy project files for dependency installation (better caching)
 COPY pyproject.toml uv.lock ./

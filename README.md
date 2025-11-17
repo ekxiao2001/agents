@@ -145,7 +145,7 @@ curl -LsSf https://astral.sh/uv/install.sh | sh
 uv sync --frozen --no-dev
 
 # 启动 FastAPI（默认 0.0.0.0:8022）
-python fastapi_server_start.py
+uv run fastapi_server_start.py
 ```
 
 如果使用 `pip`，请自行安装服务依赖（FastAPI/uvicorn/dotenv 等）：

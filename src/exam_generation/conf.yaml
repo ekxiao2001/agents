@@ -1,0 +1,5 @@
+# model configuration
+LLM_BINDING: dashscope
+MODEL_NAME: qwen-max
+API_KEY: sk-8a3a1f24863e4b91a1d8198a0fbfa0b5 # 公司的
+# BASE_URL: https://api.deepseek.com

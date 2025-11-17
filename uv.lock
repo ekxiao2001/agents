@@ -1,5 +1,5 @@
 version = 1
-revision = 2
+revision = 3
 requires-python = ">=3.10"
 resolution-markers = [
     "python_full_version >= '3.13'",
@@ -666,16 +666,22 @@ source = { virtual = "." }
 dependencies = [
     { name = "agentscope" },
     { name = "agentscope-runtime" },
+    { name = "fastapi" },
     { name = "pydantic" },
+    { name = "python-dotenv" },
     { name = "pyyaml" },
+    { name = "uvicorn" },
 ]
 
 [package.metadata]
 requires-dist = [
     { name = "agentscope", specifier = ">=1.0.6" },
     { name = "agentscope-runtime", specifier = ">=0.1.6" },
+    { name = "fastapi", specifier = ">=0.115.0" },
     { name = "pydantic", specifier = ">=2.12.3" },
+    { name = "python-dotenv", specifier = ">=1.0.1" },
     { name = "pyyaml", specifier = ">=6.0.3" },
+    { name = "uvicorn", specifier = ">=0.30.0" },
 ]
 
 [[package]]
